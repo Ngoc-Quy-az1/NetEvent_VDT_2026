@@ -1,0 +1,93 @@
+services: 
+  postgres:
+    image: postgres:15-alpine
+    container_name: netevent-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_MULTIPLE_DATABASES: adapter_db,notification_db
+    ports:
+      - "15432:5432"
+    command: ["postgres", "-c", "wal_level=logical"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/database/init/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - netevent-network
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8-alpine
+    container_name: netevent-clickhouse
+    environment:
+      CLICKHOUSE_DB: kpi_db
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhousepassword
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    command: ["--", "--listen_host=0.0.0.0"]
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./deploy/database/init/init-clickhouse.sql:/docker-entrypoint-initdb.d/init-clickhouse.sql
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - netevent-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: netevent-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - netevent-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: netevent-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - netevent-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: netevent-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - netevent-network
+
+networks:
+  netevent-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  clickhouse_data:

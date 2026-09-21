@@ -35,3 +35,18 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Environment & Secret Files ###
+.env
+.env.*
+.env*.local
+!.env.example
+
+### Maven ###
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### Logs & Temp Files ###
+*.log
+*.tmp
