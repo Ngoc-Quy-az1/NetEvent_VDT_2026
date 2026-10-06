@@ -17,7 +17,6 @@ public class ConfigureTemplateRequest {
     private UUID templateId;
     private UUID channelId;
     private String templateName;
-    private String queueName;
     private String configJson;
     private String status;
 }

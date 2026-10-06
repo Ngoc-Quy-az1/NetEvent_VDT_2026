@@ -39,9 +39,6 @@ public class ProfileEntity {
     @Column(name = "cron_expression")
     private String cronExpression;
 
-    @Column(name = "require_approval", nullable = false)
-    private Boolean requireApproval;
-
     @Column(name = "start_time")
     private Instant startTime;
 
@@ -65,6 +62,10 @@ public class ProfileEntity {
     @OneToMany(mappedBy = "profile", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<ProfileEventSessionEntity> profileEventSessions = new ArrayList<>();
+
+    @OneToMany(mappedBy = "profile", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<ProfileBusinessRuleMappingEntity> profileBusinessRules = new ArrayList<>();
 
     public void addProfileAccount(ProfileAccountEntity profileAccount) {
         profileAccounts.add(profileAccount);

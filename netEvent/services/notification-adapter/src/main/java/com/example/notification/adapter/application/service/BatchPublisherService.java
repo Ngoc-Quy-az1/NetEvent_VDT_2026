@@ -1,80 +1,88 @@
 package com.example.notification.adapter.application.service;
 
-import com.example.notification.adapter.application.dto.NotificationBatchMessage;
-import com.example.notification.adapter.application.dto.NotificationEventItem;
-import com.example.notification.adapter.domain.EventEntity;
-import com.example.notification.adapter.infrastructure.EventRepository;
-import com.example.notification.adapter.infrastructure.KafkaEventPublisher;
+import com.example.notification.adapter.domain.NotificationEventEntity;
+import com.example.notification.adapter.infrastructure.kafka.KafkaEventPublisher;
+import com.example.notification.adapter.infrastructure.repository.NotificationEventRepository;
+import com.example.notification.contract.profile.ProfileEvent;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
+import java.time.Duration;
 import java.util.List;
-import java.util.UUID;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class BatchPublisherService {
 
-    private final EventRepository eventRepository;
+    private static final int MAX_RETRY_COUNT = 5;
+    private static final Duration PROCESSING_TIMEOUT = Duration.ofMinutes(5);
+    private final NotificationEventRepository notificationEventRepository;
     private final KafkaEventPublisher kafkaEventPublisher;
+    private final ObjectMapper objectMapper;
 
-    private static final DateTimeFormatter BATCH_ID_FORMATTER =
-            DateTimeFormatter.ofPattern("yyyyMMdd-HHmm").withZone(ZoneId.systemDefault());
+    @Value("${scheduler.batch.size:20}")
+    private int batchSize;
 
     @Transactional
-    public void publishPendingBatch() {
-        List<EventEntity> pendingEvents = eventRepository.findTop500ByStatusOrderByReceivedAtAsc("PENDING");
-        if (pendingEvents.isEmpty()) {
+    public void publishPendingEvents() {
+        List<NotificationEventEntity> events = claimPendingEvents();
+        if (events.isEmpty()) {
             return;
         }
 
-        String timestampPart = BATCH_ID_FORMATTER.format(Instant.now());
-        String batchId = "BATCH-" + timestampPart + "-" + UUID.randomUUID().toString().substring(0, 8);
-
-        log.info("Batch Publisher fetched {} PENDING records. Packaging into batchId: {}", pendingEvents.size(), batchId);
-
-        List<NotificationEventItem> eventItems = new ArrayList<>();
-        for (EventEntity entity : pendingEvents) {
-            eventItems.add(NotificationEventItem.builder()
-                    .eventId(entity.getNotificationEventId())
-                    .profileId(entity.getProfileId())
-                    .triggeredAt(entity.getReceivedAt())
-                    .rawPayload(entity.getRawEventPayload())
-                    .build());
-        }
-
-        NotificationBatchMessage batchMessage = NotificationBatchMessage.builder()
-                .batchId(batchId)
-                .createdAt(Instant.now())
-                .totalEvents(eventItems.size())
-                .events(eventItems)
-                .build();
-
-        try {
-            kafkaEventPublisher.publishBatchMessage(batchMessage);
-
-            Instant now = Instant.now();
-            for (EventEntity entity : pendingEvents) {
-                entity.setStatus("PUBLISHED");
-                entity.setBatchId(batchId);
-                entity.setPublishedAt(now);
+        for (NotificationEventEntity event : events) {
+            try {
+                ProfileEvent profileEvent = objectMapper.readValue(event.getRawEventPayload(), ProfileEvent.class);
+                if (profileEvent.getCorrelationId() == null) {
+                    profileEvent.setCorrelationId(event.getNotificationEventId());
+                }
+                if (profileEvent.getProfileId() == null) {
+                    profileEvent.setProfileId(event.getProfileId());
+                }
+                kafkaEventPublisher.publishProfileTriggeredEventAndWait(profileEvent);
+                markPublished(event);
+            } catch (Exception exception) {
+                markFailedAttempt(event, exception);
+                log.error("[BATCH] Failed publishing eventId={}", event.getNotificationEventId(), exception);
             }
-            eventRepository.saveAll(pendingEvents);
-            log.info("Successfully published batch {} with {} events to Kafka.", batchId, pendingEvents.size());
-        } catch (Exception e) {
-            log.error("Failed to publish batch {} to Kafka. Incrementing retry count.", batchId, e);
-            for (EventEntity entity : pendingEvents) {
-                entity.setRetryCount(entity.getRetryCount() + 1);
-                entity.setErrorMessage(e.getMessage());
-            }
-            eventRepository.saveAll(pendingEvents);
         }
+    }
+
+    @Transactional
+    public List<NotificationEventEntity> claimPendingEvents() {
+        notificationEventRepository.requeueExpiredProcessingEvents(Instant.now().minus(PROCESSING_TIMEOUT));
+        List<NotificationEventEntity> events = notificationEventRepository.findByStatusOrderByReceivedAtAsc(
+                "PENDING", PageRequest.of(0, Math.max(1, batchSize)));
+        Instant claimedAt = Instant.now();
+        for (NotificationEventEntity event : events) {
+            event.setStatus("PROCESSING");
+            event.setProcessedAt(claimedAt);
+        }
+        return events;
+    }
+
+    @Transactional
+    public void markPublished(NotificationEventEntity event) {
+        event.setStatus("PUBLISHED");
+        event.setPublishedAt(Instant.now());
+        event.setErrorMessage(null);
+        notificationEventRepository.save(event);
+    }
+
+    @Transactional
+    public void markFailedAttempt(NotificationEventEntity event, Exception exception) {
+        int retryCount = event.getRetryCount() + 1;
+        event.setRetryCount(retryCount);
+        event.setErrorMessage(exception.getMessage());
+        event.setProcessedAt(null);
+        event.setStatus(retryCount >= MAX_RETRY_COUNT ? "FAILED" : "PENDING");
+        notificationEventRepository.save(event);
     }
 }

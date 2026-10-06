@@ -28,6 +28,7 @@ public interface ProfileWorkflowService {
     void configureProfileRules(UUID profileId, ConfigureProfileRuleRequest request);
     List<BusinessRuleResponse> getAllBusinessRules();
     BusinessRuleResponse getBusinessRule(UUID ruleId);
+    BusinessRuleCredentialResponse getBusinessRuleCredential(UUID ruleId);
     List<BusinessRuleResponse> getRulesByProfileId(UUID profileId);
     BusinessRuleResponse createBusinessRule(BusinessRuleResponse request);
     BusinessRuleResponse updateBusinessRule(UUID ruleId, BusinessRuleResponse request);
@@ -43,7 +44,7 @@ public interface ProfileWorkflowService {
     // --- Event Operations ---
     List<EventResponse> getAllEvents();
     EventResponse getEvent(UUID eventId);
-    EventResponse createEvent(EventResponse request);
+    EventResponse createEvent(CreateEventRequest request);
     EventResponse updateEvent(UUID eventId, EventResponse request);
     void deleteEvent(UUID eventId);
 }

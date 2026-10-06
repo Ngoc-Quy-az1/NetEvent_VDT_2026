@@ -67,7 +67,7 @@ Mô hình ERD gồm 3 cụm quan hệ chính:
 | :--- | :--- |
 | `profile` | Cấu hình gốc của một loại cảnh báo (`cron_expression`, `require_approval`, `start_time`, `end_time`) |
 | `channel` | Danh mục kênh gửi (`channel_id`, `channel_code`, `channel_name`) |
-| `template` | Mẫu thông báo (`template_id`, `channel_id`, `template_name`, `queue_name`, `config`) |
+| `template` | Mẫu thông báo (`template_id`, `channel_id`, `template_name`, `config`) |
 | `profile_account` | N-N Profile $\leftrightarrow$ Tài khoản nhận tin |
 | `profile_channel` | N-N Profile $\leftrightarrow$ Kênh gửi áp dụng |
 | `profile_event_session` | N-N Profile $\leftrightarrow$ Event Session (Profile theo dõi đợt sự kiện nào) |
@@ -290,7 +290,6 @@ Mô hình ERD gồm 3 cụm quan hệ chính:
 | :--- | :--- | :--- |
 | `channel_code` | `varchar` | PRIMARY KEY (ví dụ: `'SMS'`, `'EMAIL'`, `'OTT'`) |
 | `channel_name` | `varchar` | NOT NULL |
-| `queue_name` | `varchar` | NULLABLE |
 | `config` | `jsonb` | NOT NULL, DEFAULT `'{}'` |
 | `status` | `varchar` | NOT NULL, DEFAULT `'ACTIVE'`, `CHECK (status IN ('ACTIVE','INACTIVE'))` |
 | `created_at` | `timestamptz` | NOT NULL, DEFAULT `now()` |

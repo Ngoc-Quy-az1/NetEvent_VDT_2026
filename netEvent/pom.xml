@@ -22,11 +22,9 @@
     <modules>
         <module>libs/common</module>
         <module>libs/event-contract</module>
-        <module>services/api-gateway</module>
         <module>services/notification-adapter</module>
-        <module>services/event-processor</module>
-        <module>services/routing-service</module>
-        <module>services/dispatcher-service</module>
+        <module>services/notification-processor-service</module>
+        <module>services/kpi-simulator-service</module>
         <module>services/audit-service</module>
         <module>services/mini_business-service</module>
         <module>services/workers/email-worker</module>

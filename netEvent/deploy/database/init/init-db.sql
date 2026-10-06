@@ -33,8 +33,6 @@ CREATE TABLE IF NOT EXISTS account (
     area_code VARCHAR,
     language VARCHAR,
     role_id SMALLINT,
-    last_login TIMESTAMPTZ,
-    deleted BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -158,17 +156,28 @@ CREATE TABLE IF NOT EXISTS channel (
 CREATE TABLE IF NOT EXISTS profile_channel (
     profile_id UUID NOT NULL REFERENCES profile(profile_id) ON DELETE CASCADE,
     channel_id UUID NOT NULL REFERENCES channel(channel_id) ON DELETE CASCADE,
+    template_id UUID,
     PRIMARY KEY (profile_id, channel_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_profile_channel_channel_id ON profile_channel (channel_id);
+
+-- 1.13a Groups configured for a profile and a channel. The three IDs form the key.
+CREATE TABLE IF NOT EXISTS profile_group (
+    profile_id UUID NOT NULL REFERENCES profile(profile_id) ON DELETE CASCADE,
+    group_id UUID NOT NULL,
+    channel_id UUID NOT NULL REFERENCES channel(channel_id) ON DELETE CASCADE,
+    group_config JSONB NOT NULL DEFAULT '{}',
+    PRIMARY KEY (profile_id, group_id, channel_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_group_profile_id ON profile_group(profile_id);
 
 -- 1.14 template
 CREATE TABLE IF NOT EXISTS template (
     template_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     channel_id UUID REFERENCES channel(channel_id),
     template_name VARCHAR NOT NULL,
-    queue_name VARCHAR,
     config JSONB DEFAULT '{}',
     status VARCHAR NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -176,6 +185,10 @@ CREATE TABLE IF NOT EXISTS template (
 );
 
 CREATE INDEX IF NOT EXISTS idx_template_channel_id ON template (channel_id);
+ALTER TABLE profile_channel
+    ADD CONSTRAINT fk_profile_channel_template
+    FOREIGN KEY (template_id) REFERENCES template(template_id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_profile_channel_template_id ON profile_channel (template_id);
 
 -- 1.15 notification_event
 CREATE TABLE IF NOT EXISTS notification_event (
@@ -183,13 +196,14 @@ CREATE TABLE IF NOT EXISTS notification_event (
     profile_id UUID REFERENCES profile(profile_id),
     event_id UUID REFERENCES event(event_id),
     raw_event_payload JSONB NOT NULL,
-    status VARCHAR NOT NULL DEFAULT 'RECEIVED',
+    status VARCHAR NOT NULL DEFAULT 'PENDING',
     batch_id VARCHAR(64),
     retry_count INT NOT NULL DEFAULT 0,
     error_message TEXT,
     received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     processed_at TIMESTAMPTZ NULL,
-    published_at TIMESTAMPTZ NULL
+    published_at TIMESTAMPTZ NULL,
+    CONSTRAINT chk_notification_event_status CHECK (status IN ('PENDING', 'PUBLISHED', 'PROCESSED', 'FAILED'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_notification_event_profile_id ON notification_event (profile_id);
@@ -208,7 +222,10 @@ CREATE TABLE IF NOT EXISTS business_rule (
     source_schema VARCHAR,
     source_table VARCHAR,
     source_connection_ref VARCHAR,
-    sql_query TEXT NOT NULL,
+    source_username VARCHAR(255),
+    source_password TEXT,
+    sql_query TEXT[] NOT NULL DEFAULT '{}',
+    summary_sql_queries TEXT[] NOT NULL DEFAULT '{}',
     description TEXT,
     status VARCHAR NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -262,26 +279,37 @@ CREATE DATABASE notification_db;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 2.1 notification
-CREATE TABLE IF NOT EXISTS notification (
+-- 2.1 notifications
+CREATE TABLE IF NOT EXISTS notifications (
     notification_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     notification_event_id UUID,
     profile_id UUID,
-    contents TEXT,
     context_data JSONB,
+    raw_data JSONB NOT NULL,
     status VARCHAR NOT NULL DEFAULT 'WAITING_APPROVAL',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_notification_event_id ON notification (notification_event_id);
-CREATE INDEX IF NOT EXISTS idx_notification_profile_id ON notification (profile_id);
+CREATE INDEX IF NOT EXISTS idx_notification_event_id ON notifications (notification_event_id);
+CREATE INDEX IF NOT EXISTS idx_notification_profile_id ON notifications (profile_id);
 
--- 2.2 routing_template
+-- 2.2 processed_event: idempotency record for consumed Kafka events.
+CREATE TABLE IF NOT EXISTS processed_event (
+    event_id UUID PRIMARY KEY,
+    consumer_name VARCHAR NOT NULL,
+    event_type VARCHAR NOT NULL DEFAULT 'PROFILE_TRIGGERED',
+    processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 2.3 routing_template
 CREATE TABLE IF NOT EXISTS routing_template (
     routing_template_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     channel_id UUID,
     profile_id UUID,
     content TEXT NOT NULL,
+    channel_code VARCHAR,
+    frequency_mode VARCHAR,
     version INTEGER NOT NULL DEFAULT 1,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -291,49 +319,50 @@ CREATE TABLE IF NOT EXISTS routing_template (
 -- 2.3 recipient
 CREATE TABLE IF NOT EXISTS recipient (
     recipient_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username VARCHAR,
-    full_name VARCHAR,
-    email VARCHAR,
-    cell_phone VARCHAR,
-    area_code VARCHAR,
-    language VARCHAR,
-    role_id SMALLINT,
-    last_login TIMESTAMPTZ,
-    deleted BOOLEAN DEFAULT false,
+    account_id UUID,
+    full_name VARCHAR NOT NULL,
+    phone_number VARCHAR(30),
+    channel_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 2.4 recipient_group & recipient_group_member
-CREATE TABLE IF NOT EXISTS recipient_group (
+CREATE INDEX IF NOT EXISTS idx_recipient_account_id ON recipient (account_id);
+
+-- 2.4 notification_group: a delivery target representing one channel group.
+-- Members are managed by the external channel/provider, not in this database.
+CREATE TABLE IF NOT EXISTS notification_group (
     group_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    group_name VARCHAR NOT NULL UNIQUE
+    channel_id UUID,
+    group_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS recipient_group_member (
-    recipient_id UUID NOT NULL REFERENCES recipient(recipient_id) ON DELETE CASCADE,
-    group_id UUID NOT NULL REFERENCES recipient_group(group_id) ON DELETE CASCADE,
-    PRIMARY KEY (recipient_id, group_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_rgm_group_id ON recipient_group_member (group_id);
-
--- 2.5 notifications_task
+-- 2.5 notifications_task: exactly one target, individual or group.
 CREATE TABLE IF NOT EXISTS notifications_task (
     task_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    notification_id UUID NOT NULL REFERENCES notification(notification_id) ON DELETE CASCADE,
+    notification_id UUID NOT NULL REFERENCES notifications(notification_id) ON DELETE CASCADE,
     channel_id UUID,
-    recipient_id UUID NOT NULL REFERENCES recipient(recipient_id),
+    channel_code VARCHAR,
+    recipient_id UUID REFERENCES recipient(recipient_id),
+    group_id UUID REFERENCES notification_group(group_id),
     routing_template_id UUID REFERENCES routing_template(routing_template_id),
     status VARCHAR NOT NULL DEFAULT 'PENDING',
     retry_count INTEGER NOT NULL DEFAULT 0,
-    content TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_task_exactly_one_target CHECK (
+        (recipient_id IS NOT NULL AND group_id IS NULL)
+        OR (recipient_id IS NULL AND group_id IS NOT NULL)
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_task_notification_id ON notifications_task (notification_id);
 CREATE INDEX IF NOT EXISTS idx_task_recipient_id ON notifications_task (recipient_id);
+CREATE INDEX IF NOT EXISTS idx_task_group_id ON notifications_task (group_id);
 CREATE INDEX IF NOT EXISTS idx_task_routing_template_id ON notifications_task (routing_template_id);
 
 -- 2.6 delivery_log
@@ -354,7 +383,26 @@ CREATE TABLE IF NOT EXISTS delivery_log (
 CREATE INDEX IF NOT EXISTS idx_delivery_log_task_id ON delivery_log (task_id);
 CREATE INDEX IF NOT EXISTS idx_delivery_log_correlation_id ON delivery_log (correlation_id);
 
--- 2.7 Replicated configuration tables from adapter_db
+-- 2.7 notification_attachment
+CREATE TABLE IF NOT EXISTS notification_attachment (
+    attachment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    notification_id UUID NOT NULL REFERENCES notifications(notification_id) ON DELETE CASCADE,
+    file_name VARCHAR(512) NOT NULL,
+    storage_key VARCHAR(1024) NOT NULL,
+    content_type VARCHAR(255) NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'READY',
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_attachment_cleanup
+    ON notification_attachment(status, expires_at);
+CREATE INDEX IF NOT EXISTS idx_notification_attachment_notification_id
+    ON notification_attachment(notification_id);
+
+-- 2.9 Replicated configuration tables from adapter_db
 CREATE TABLE IF NOT EXISTS business_rule (
     business_rule_id UUID PRIMARY KEY,
     business_rule_code VARCHAR NOT NULL UNIQUE,
@@ -366,7 +414,10 @@ CREATE TABLE IF NOT EXISTS business_rule (
     source_schema VARCHAR,
     source_table VARCHAR,
     source_connection_ref VARCHAR,
-    sql_query TEXT NOT NULL,
+    source_username VARCHAR(255),
+    source_password TEXT,
+    sql_query TEXT[] NOT NULL DEFAULT '{}',
+    summary_sql_queries TEXT[] NOT NULL DEFAULT '{}',
     description TEXT,
     status VARCHAR NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

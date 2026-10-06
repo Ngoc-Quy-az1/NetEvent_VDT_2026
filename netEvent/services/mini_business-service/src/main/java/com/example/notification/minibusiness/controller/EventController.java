@@ -2,12 +2,14 @@ package com.example.notification.minibusiness.controller;
 
 import com.example.notification.common.response.ApiResponse;
 import com.example.notification.minibusiness.dto.EventResponse;
+import com.example.notification.minibusiness.dto.CreateEventRequest;
 import com.example.notification.minibusiness.service.ProfileWorkflowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import javax.validation.Valid;
 
 import java.util.List;
 import java.util.UUID;
@@ -43,7 +45,7 @@ public class EventController {
 
     // Tạo mới Sự kiện mạng
     @PostMapping("/events")
-    public ResponseEntity<ApiResponse<EventResponse>> createEvent(@RequestBody EventResponse request) {
+    public ResponseEntity<ApiResponse<EventResponse>> createEvent(@Valid @RequestBody CreateEventRequest request) {
         log.info("REST request to create event: {}", request.getEventCode());
         EventResponse response = profileWorkflowService.createEvent(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));

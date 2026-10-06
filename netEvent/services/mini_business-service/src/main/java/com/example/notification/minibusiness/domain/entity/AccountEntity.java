@@ -45,12 +45,6 @@ public class AccountEntity {
     @Column(name = "role_id")
     private Short roleId;
 
-    @Column(name = "last_login")
-    private Instant lastLogin;
-
-    @Column(name = "deleted", nullable = false)
-    private Boolean deleted;
-
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -67,7 +61,6 @@ public class AccountEntity {
 
     @PrePersist
     public void prePersist() {
-        if (deleted == null) deleted = false;
         if (createdAt == null) createdAt = Instant.now();
         if (updatedAt == null) updatedAt = Instant.now();
     }

@@ -22,8 +22,6 @@ public class AccountResponse {
     private String areaCode;
     private String language;
     private Short roleId;
-    private Instant lastLogin;
-    private Boolean deleted;
     private Instant createdAt;
     private Instant updatedAt;
 }

@@ -37,9 +37,9 @@ public class AuditController {
     @GetMapping("/profiles")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getProfiles() {
         List<Map<String, Object>> profiles = List.of(
-            Map.of("profileId", 1001, "profileName", "coverage_alert", "displayName", "Cảnh báo Vùng phủ sóng", "status", "ACTIVE", "requireApproval", true, "allowMute", true, "cronExpression", "0 0 * * * *"),
-            Map.of("profileId", 1002, "profileName", "overshoot_alert", "displayName", "Cảnh báo Cell Overshoot", "status", "ACTIVE", "requireApproval", false, "allowMute", true, "cronExpression", "0 */15 * * * *"),
-            Map.of("profileId", 1003, "profileName", "azimuth_mismatch", "displayName", "Cảnh báo Sai Azimuth", "status", "ACTIVE", "requireApproval", true, "allowMute", false, "cronExpression", "0 0 8 * * *")
+            Map.of("profileId", 1001, "profileName", "coverage_alert", "displayName", "Cảnh báo Vùng phủ sóng", "status", "ACTIVE", "allowMute", true, "cronExpression", "0 0 * * * *"),
+            Map.of("profileId", 1002, "profileName", "overshoot_alert", "displayName", "Cảnh báo Cell Overshoot", "status", "ACTIVE", "allowMute", true, "cronExpression", "0 */15 * * * *"),
+            Map.of("profileId", 1003, "profileName", "azimuth_mismatch", "displayName", "Cảnh báo Sai Azimuth", "status", "ACTIVE", "allowMute", false, "cronExpression", "0 0 8 * * *")
         );
         return ResponseEntity.ok(ApiResponse.success(profiles));
     }

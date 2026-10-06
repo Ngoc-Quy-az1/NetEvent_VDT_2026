@@ -36,9 +36,6 @@ public class TemplateEntity {
     @Column(name = "template_name", nullable = false)
     private String templateName;
 
-    @Column(name = "queue_name")
-    private String queueName;
-
     @Type(type = "jsonb")
     @Column(name = "config", columnDefinition = "jsonb")
     private String config;
@@ -76,9 +73,6 @@ public class TemplateEntity {
 
     public String getTemplateName() { return templateName; }
     public void setTemplateName(String templateName) { this.templateName = templateName; }
-
-    public String getQueueName() { return queueName; }
-    public void setQueueName(String queueName) { this.queueName = queueName; }
 
     public String getConfig() { return config; }
     public void setConfig(String config) { this.config = config; }

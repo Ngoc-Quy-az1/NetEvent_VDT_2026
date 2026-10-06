@@ -29,6 +29,10 @@ public class ProfileAccountEntity {
     @Column(name = "account_id")
     private UUID accountId;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "account_id", insertable = false, updatable = false)
+    private AccountEntity account;
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

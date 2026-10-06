@@ -4,7 +4,7 @@
 +
 +## Luồng chạy
 +
-+`notification-adapter` lưu event và phát `network.report.created`. `event-processor` tạo nội dung; event quan trọng đi qua `approval-service`, các event còn lại chuyển thẳng sang Dispatcher. `dispatcher-service` tách delivery task theo channel. Worker Email, SMS và OTT thực hiện gửi rồi phát `notification.audit.events`; `audit-service` lưu kết quả.
++`notification-adapter` lưu event và phát `PROFILE_TRIGGERED`. `notification-processor-service` xử lý dữ liệu, tạo nội dung, routing task và dispatch delivery theo channel. Worker Email, SMS và OTT thực hiện gửi rồi phát `notification.audit.events`; `audit-service` lưu kết quả.
 +
 +## Chạy local
 +

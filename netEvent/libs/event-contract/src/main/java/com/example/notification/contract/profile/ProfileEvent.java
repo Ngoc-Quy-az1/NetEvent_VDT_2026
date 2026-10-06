@@ -36,7 +36,6 @@ public class ProfileEvent {
     public Map<String, Object> getPayload() { return payload; }
     public void setPayload(Map<String, Object> payload) { this.payload = payload; }
 
-    // Compatibility methods for record-style getters if used
     public UUID profileId() { return profileId; }
     public UUID correlationId() { return correlationId; }
     public String eventType() { return eventType; }

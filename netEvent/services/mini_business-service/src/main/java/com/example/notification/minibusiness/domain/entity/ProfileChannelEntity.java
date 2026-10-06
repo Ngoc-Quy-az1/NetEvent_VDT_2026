@@ -32,4 +32,11 @@ public class ProfileChannelEntity {
     @MapsId("channelId")
     @JoinColumn(name = "channel_id")
     private ChannelEntity channel;
+
+    @Column(name = "template_id")
+    private UUID templateId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "template_id", insertable = false, updatable = false)
+    private TemplateEntity template;
 }

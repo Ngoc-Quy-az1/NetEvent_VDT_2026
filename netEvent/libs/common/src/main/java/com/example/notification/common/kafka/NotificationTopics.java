@@ -6,6 +6,7 @@ import java.security.NoSuchAlgorithmException;
 
 public class NotificationTopics {
     public static final String PROFILE_TRIGGERED = "profile.triggered.v1";
+    public static final String PROFILE_PROCESSING_RESULT = "profile.processing-result.v1";
     public static final String APPROVAL_REQUESTED = "notification.approval-requested.v1";
     public static final String NOTIFICATION_APPROVED = "notification.approved.v1";
     public static final String NOTIFICATION_REJECTED = "notification.rejected.v1";

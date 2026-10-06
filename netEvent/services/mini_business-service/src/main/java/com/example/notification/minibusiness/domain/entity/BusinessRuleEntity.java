@@ -2,6 +2,7 @@ package com.example.notification.minibusiness.domain.entity;
 
 import lombok.*;
 import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.Type;
 
 import javax.persistence.*;
 import java.time.Instant;
@@ -51,8 +52,20 @@ public class BusinessRuleEntity {
     @Column(name = "source_connection_ref")
     private String sourceConnectionRef;
 
-    @Column(name = "sql_query", nullable = false, columnDefinition = "TEXT")
-    private String sqlQuery;
+    @Column(name = "source_username")
+    private String sourceUsername;
+
+    @Column(name = "source_password")
+    private String sourcePassword;
+
+
+    @Type(type = "string-array")
+    @Column(name = "sql_query", nullable = false, columnDefinition = "text[]")
+    private String[] sqlQueries;
+
+    @Type(type = "string-array")
+    @Column(name = "summary_sql_queries", nullable = false, columnDefinition = "text[]")
+    private String[] summarySqlQueries;
 
     @Column(name = "description")
     private String description;
@@ -73,13 +86,8 @@ public class BusinessRuleEntity {
     @PrePersist
     public void prePersist() {
         if (status == null) status = "ACTIVE";
-        if (sqlQuery == null || sqlQuery.trim().isEmpty()) {
-            if (sourceTable != null && !sourceTable.trim().isEmpty()) {
-                sqlQuery = "SELECT * FROM " + (sourceDatabase != null && !sourceDatabase.trim().isEmpty() ? sourceDatabase + "." : "") + sourceTable;
-            } else {
-                sqlQuery = "SELECT 1";
-            }
-        }
+        if (sqlQueries == null) sqlQueries = new String[0];
+        if (summarySqlQueries == null) summarySqlQueries = new String[0];
         if (createdAt == null) createdAt = Instant.now();
         if (updatedAt == null) updatedAt = Instant.now();
     }

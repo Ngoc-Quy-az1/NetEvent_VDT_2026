@@ -1,0 +1,3 @@
+package com.example.notification.minibusiness.repository;
+import com.example.notification.minibusiness.domain.entity.ProfileGroupEntity; import org.springframework.data.jpa.repository.JpaRepository; import org.springframework.data.jpa.repository.Modifying; import org.springframework.data.jpa.repository.Query; import org.springframework.data.repository.query.Param; import java.util.*;
+public interface ProfileGroupRepository extends JpaRepository<ProfileGroupEntity, ProfileGroupEntity.Id> { List<ProfileGroupEntity> findByProfileId(UUID profileId); @Modifying @Query("delete from ProfileGroupEntity x where x.profileId=:profileId") void deleteByProfileId(@Param("profileId") UUID profileId); }

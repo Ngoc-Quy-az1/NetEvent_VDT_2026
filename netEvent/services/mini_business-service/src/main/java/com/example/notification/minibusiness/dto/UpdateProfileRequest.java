@@ -28,6 +28,9 @@ public class UpdateProfileRequest {
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm[:ss][.SSS][X]", timezone = "UTC")
     private Instant endTime;
     private List<UUID> channelIds;
+    private List<ProfileChannelTemplateRequest> channelTemplates;
     private List<String> channels;
     private List<UUID> accountIds;
+    private List<UUID> sessionIds;
+    private List<ProfileGroupRequest> profileGroups;
 }

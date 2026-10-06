@@ -18,7 +18,6 @@ public class TemplateResponse {
     private UUID channelId;
     private String channelName;
     private String templateName;
-    private String queueName;
     private String config;
     private String status;
     private Instant createdAt;

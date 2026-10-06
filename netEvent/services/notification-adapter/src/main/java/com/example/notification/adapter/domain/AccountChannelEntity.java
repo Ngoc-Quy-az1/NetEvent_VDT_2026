@@ -2,6 +2,7 @@ package com.example.notification.adapter.domain;
 
 import lombok.*;
 import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.Type;
 
 import javax.persistence.*;
 import java.time.Instant;
@@ -25,8 +26,16 @@ public class AccountChannelEntity {
     @Column(name = "account_id", nullable = false)
     private UUID accountId;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "account_id", insertable = false, updatable = false)
+    private AccountEntity account;
+
     @Column(name = "channel_id", nullable = false)
     private UUID channelId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "channel_id", insertable = false, updatable = false)
+    private ChannelEntity channel;
 
     @Column(name = "contact_value", nullable = false)
     private String contactValue;
@@ -37,6 +46,7 @@ public class AccountChannelEntity {
     @Column(name = "is_active", nullable = false)
     private Boolean isActive;
 
+    @Type(type = "jsonb")
     @Column(name = "config", columnDefinition = "jsonb")
     private String config;
 

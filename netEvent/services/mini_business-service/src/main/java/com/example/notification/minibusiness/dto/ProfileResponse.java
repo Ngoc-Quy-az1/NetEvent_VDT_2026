@@ -21,7 +21,6 @@ public class ProfileResponse {
     private String displayNameUi;
     private String status;
     private String cronExpression;
-    private Boolean requireApproval;
     private Instant startTime;
     private Instant endTime;
     private Instant createdAt;
@@ -32,5 +31,9 @@ public class ProfileResponse {
     private List<String> business_rule_name;
     private List<UUID> channel_id;
     private List<String> channel_name;
+    private List<ProfileChannelTemplateResponse> channelTemplates;
+    private List<UUID> sessionIds;
+    private List<String> session_event_code;
+    private List<ProfileGroupResponse> profileGroups;
     
 }

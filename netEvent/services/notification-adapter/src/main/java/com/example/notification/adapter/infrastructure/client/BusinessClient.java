@@ -29,7 +29,6 @@ public class BusinessClient {
 
     public List<ProfileDto> getActiveProfiles() {
         String url = miniBusinessServiceUrl + "/api/v1/profile-workflow/profiles";
-        log.info("Calling mini-business-service at: {}", url);
         try {
             ResponseEntity<List<ProfileDto>> response = restTemplate.exchange(
                     url,

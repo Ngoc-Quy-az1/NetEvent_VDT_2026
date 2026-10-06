@@ -2,6 +2,7 @@ package com.example.notification.minibusiness.controller;
 
 import com.example.notification.common.response.ApiResponse;
 import com.example.notification.minibusiness.dto.BusinessRuleResponse;
+import com.example.notification.minibusiness.dto.BusinessRuleCredentialResponse;
 import com.example.notification.minibusiness.service.ProfileWorkflowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,11 @@ public class BusinessRuleController {
                     .body(ApiResponse.error("NOT_FOUND", "Business rule not found with ID: " + ruleId));
         }
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    @GetMapping("/business-rules/{ruleId}/credential")
+    public ResponseEntity<ApiResponse<BusinessRuleCredentialResponse>> getBusinessRuleCredential(@PathVariable UUID ruleId) {
+        return ResponseEntity.ok(ApiResponse.success(profileWorkflowService.getBusinessRuleCredential(ruleId)));
     }
 
     // Tạo mới Quy tắc nghiệp vụ

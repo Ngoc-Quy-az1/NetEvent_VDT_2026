@@ -2,11 +2,17 @@ package com.example.notification.minibusiness.service.impl;
 
 import com.example.notification.minibusiness.domain.entity.AccountEntity;
 import com.example.notification.minibusiness.domain.entity.BusinessRuleEntity;
+import com.example.notification.minibusiness.dto.BusinessRuleCredentialResponse;
 import com.example.notification.minibusiness.domain.entity.ChannelEntity;
 import com.example.notification.minibusiness.domain.entity.EventEntity;
+import com.example.notification.minibusiness.domain.entity.EventTypeEntity;
+import com.example.notification.minibusiness.domain.entity.EventSessionEntity;
+import com.example.notification.minibusiness.domain.entity.HolidayOccasionEntity;
 import com.example.notification.minibusiness.domain.entity.ProfileAccountEntity;
 import com.example.notification.minibusiness.domain.entity.ProfileChannelEntity;
 import com.example.notification.minibusiness.domain.entity.ProfileEntity;
+import com.example.notification.minibusiness.domain.entity.ProfileEventSessionEntity;
+import com.example.notification.minibusiness.domain.entity.ProfileGroupEntity;
 import com.example.notification.minibusiness.domain.entity.TemplateEntity;
 import com.example.notification.minibusiness.dto.*;
 import com.example.notification.minibusiness.mapper.AccountMapper;
@@ -40,7 +46,12 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
     private final ProfileChannelRepository profileChannelRepository;
     private final AccountRepository accountRepository;
     private final ProfileAccountRepository profileAccountRepository;
+    private final ProfileEventSessionRepository profileEventSessionRepository;
+    private final EventSessionRepository eventSessionRepository;
     private final EventRepository eventRepository;
+    private final EventTypeRepository eventTypeRepository;
+    private final HolidayOccasionRepository holidayOccasionRepository;
+    private final ProfileGroupRepository profileGroupRepository;
 
     private final ProfileMapper profileMapper;
     private final TemplateMapper templateMapper;
@@ -73,21 +84,8 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
             }
         }
 
-        if (request.getChannelIds() != null && !request.getChannelIds().isEmpty()) {
-            for (UUID channelId : request.getChannelIds()) {
-                ChannelEntity channel = channelRepository.findById(channelId).orElse(null);
-                if (channel != null) {
-                    ProfileChannelEntity pc = ProfileChannelEntity.builder()
-                            .profileId(saved.getProfileId())
-                            .profile(saved)
-                            .channelId(channelId)
-                            .channel(channel)
-                            .build();
-                    profileChannelRepository.save(pc);
-                    saved.getProfileChannels().add(pc);
-                }
-            }
-        }
+        syncProfileChannels(saved, request.getChannelIds(), request.getChannelTemplates());
+        saveProfileGroups(saved.getProfileId(), request.getProfileGroups());
 
         return profileMapper.toResponse(saved);
     }
@@ -97,7 +95,7 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
     public ProfileResponse getProfile(UUID profileId) {
         log.info("Fetching profile details for ID: {}", profileId);
         return profileRepository.findById(profileId)
-                .map(profileMapper::toResponse)
+                .map(this::toProfileResponse)
                 .orElse(null);
     }
 
@@ -109,7 +107,7 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
         List<ProfileResponse> responseList = new java.util.ArrayList<>();
 
         for (ProfileEntity profile : profiles) {
-            ProfileResponse response = profileMapper.toResponse(profile);
+            ProfileResponse response = toProfileResponse(profile);
 
             // 1. Account mapping
             List<ProfileAccountEntity> accountMappings = profileAccountRepository.findByProfileId(profile.getProfileId());
@@ -158,6 +156,18 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
                 response.setBusiness_rule_name(ruleNames);
             }
 
+            // 4. Event session mapping
+            List<ProfileEventSessionEntity> sessionMappings = profileEventSessionRepository.findByProfileId(profile.getProfileId());
+            if (!sessionMappings.isEmpty()) {
+                response.setSessionIds(sessionMappings.stream()
+                        .map(ProfileEventSessionEntity::getSessionId)
+                        .collect(Collectors.toList()));
+                response.setSession_event_code(sessionMappings.stream()
+                        .map(mapping -> mapping.getEventSession() != null ? mapping.getEventSession().getSessionEventCode() : null)
+                        .filter(java.util.Objects::nonNull)
+                        .collect(Collectors.toList()));
+            }
+
             responseList.add(response);
         }
 
@@ -188,47 +198,135 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
             }
         }
 
-        if (request.getChannelIds() != null || request.getChannels() != null) {
-            entity.getProfileChannels().clear();
+        if (request.getChannelIds() != null || request.getChannels() != null || request.getChannelTemplates() != null) {
+            java.util.Set<UUID> desiredChannelIds = new java.util.LinkedHashSet<>();
 
             if (request.getChannelIds() != null) {
-                for (UUID channelId : request.getChannelIds()) {
-                    ChannelEntity channel = channelRepository.findById(channelId).orElse(null);
-                    if (channel != null) {
-                        ProfileChannelEntity pc = ProfileChannelEntity.builder()
-                                .profileId(profileId)
-                                .profile(entity)
-                                .channelId(channelId)
-                                .channel(channel)
-                                .build();
-                        entity.getProfileChannels().add(pc);
-                    }
-                }
+                desiredChannelIds.addAll(request.getChannelIds());
             }
 
             if (request.getChannels() != null) {
                 for (String channelName : request.getChannels()) {
-                    boolean exists = entity.getProfileChannels().stream()
-                            .anyMatch(pc -> pc.getChannel() != null && channelName.equalsIgnoreCase(pc.getChannel().getChannelName()));
-                    if (!exists) {
-                        ChannelEntity channel = channelRepository.findByChannelName(channelName)
-                                .orElseGet(() -> channelRepository.save(ChannelEntity.builder().channelName(channelName).build()));
-                        if (channel != null) {
-                            ProfileChannelEntity pc = ProfileChannelEntity.builder()
-                                    .profileId(profileId)
-                                    .profile(entity)
-                                    .channelId(channel.getChannelId())
-                                    .channel(channel)
-                                    .build();
-                            entity.getProfileChannels().add(pc);
-                        }
-                    }
+                    ChannelEntity channel = channelRepository.findByChannelName(channelName)
+                            .orElseGet(() -> channelRepository.save(ChannelEntity.builder().channelName(channelName).build()));
+                    desiredChannelIds.add(channel.getChannelId());
                 }
+            }
+
+            if (request.getChannelTemplates() != null) {
+                desiredChannelIds.addAll(request.getChannelTemplates().stream()
+                        .map(ProfileChannelTemplateRequest::getChannelId)
+                        .filter(java.util.Objects::nonNull).collect(Collectors.toList()));
+            }
+
+            // Never clear then recreate the same composite key in one persistence context.
+            // Hibernate would regard it as a deleted entity being re-saved.
+            entity.getProfileChannels().removeIf(pc -> !desiredChannelIds.contains(pc.getChannelId()));
+            java.util.Set<UUID> currentChannelIds = entity.getProfileChannels().stream()
+                    .map(ProfileChannelEntity::getChannelId).collect(Collectors.toSet());
+            for (UUID channelId : desiredChannelIds) {
+                if (currentChannelIds.contains(channelId)) continue;
+                ChannelEntity channel = channelRepository.findById(channelId).orElse(null);
+                if (channel != null) {
+                    entity.getProfileChannels().add(ProfileChannelEntity.builder()
+                            .profileId(profileId).profile(entity).channelId(channelId).channel(channel).build());
+                }
+            }
+            if (request.getChannelTemplates() != null) {
+                java.util.Map<UUID, UUID> templatesByChannel = channelTemplateIds(request.getChannelTemplates());
+                entity.getProfileChannels().forEach(pc -> pc.setTemplateId(templatesByChannel.get(pc.getChannelId())));
             }
         }
 
+        if (request.getSessionIds() != null) {
+            List<UUID> requestedSessionIds = request.getSessionIds().stream().distinct().collect(Collectors.toList());
+            List<EventSessionEntity> sessions = eventSessionRepository.findAllById(requestedSessionIds);
+            if (sessions.size() != requestedSessionIds.size()) {
+                throw new IllegalArgumentException("One or more event sessions do not exist");
+            }
+
+            if (sessions.stream().map(EventSessionEntity::getEventId).distinct().count() > 1) {
+                throw new IllegalArgumentException("A profile can only be associated with sessions from one event");
+            }
+
+            profileEventSessionRepository.deleteByProfileId(profileId);
+            profileEventSessionRepository.saveAll(sessions.stream()
+                    .map(session -> ProfileEventSessionEntity.builder()
+                            .profileId(profileId)
+                            .sessionId(session.getSessionId())
+                            .profile(entity)
+                            .eventSession(session)
+                            .build())
+                    .collect(Collectors.toList()));
+        }
+        if (request.getProfileGroups() != null) saveProfileGroups(profileId, request.getProfileGroups());
+
         ProfileEntity updated = profileRepository.save(entity);
-        return profileMapper.toResponse(updated);
+        return toProfileResponse(updated);
+    }
+
+    private void saveProfileGroups(UUID profileId, List<ProfileGroupRequest> groups) {
+        if (groups == null) return;
+        profileGroupRepository.deleteByProfileId(profileId);
+        profileGroupRepository.saveAll(groups.stream().filter(g -> g.getGroupId() != null && g.getChannelId() != null)
+                .map(g -> ProfileGroupEntity.builder().profileId(profileId).groupId(g.getGroupId()).channelId(g.getChannelId()).groupConfig(g.getGroupConfig()).build()).collect(Collectors.toList()));
+    }
+
+    private void syncProfileChannels(ProfileEntity profile, List<UUID> channelIds,
+                                     List<ProfileChannelTemplateRequest> channelTemplates) {
+        java.util.Map<UUID, UUID> templatesByChannel = channelTemplateIds(channelTemplates);
+        java.util.Set<UUID> desired = new java.util.LinkedHashSet<>();
+        if (channelIds != null) desired.addAll(channelIds);
+        desired.addAll(templatesByChannel.keySet());
+        for (UUID channelId : desired) {
+            ChannelEntity channel = channelRepository.findById(channelId)
+                    .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + channelId));
+            profile.getProfileChannels().add(ProfileChannelEntity.builder()
+                    .profileId(profile.getProfileId()).profile(profile).channelId(channelId).channel(channel)
+                    .templateId(templatesByChannel.get(channelId)).build());
+        }
+    }
+
+    private java.util.Map<UUID, UUID> channelTemplateIds(List<ProfileChannelTemplateRequest> requests) {
+        java.util.Map<UUID, UUID> result = new java.util.LinkedHashMap<>();
+        if (requests == null) return result;
+        for (ProfileChannelTemplateRequest request : requests) {
+            if (request.getChannelId() == null || request.getTemplateId() == null) {
+                throw new IllegalArgumentException("Each channel template configuration requires channelId and templateId");
+            }
+            TemplateEntity template = templateRepository.findById(request.getTemplateId())
+                    .orElseThrow(() -> new IllegalArgumentException("Template not found: " + request.getTemplateId()));
+            if (!request.getChannelId().equals(template.getChannelId())) {
+                throw new IllegalArgumentException("Selected template does not belong to its channel");
+            }
+            if (result.put(request.getChannelId(), request.getTemplateId()) != null) {
+                throw new IllegalArgumentException("Only one template can be selected per channel");
+            }
+        }
+        return result;
+    }
+
+    private ProfileResponse toProfileResponse(ProfileEntity profile) {
+        ProfileResponse response = profileMapper.toResponse(profile);
+        List<ProfileEventSessionEntity> sessionMappings = profileEventSessionRepository.findByProfileId(profile.getProfileId());
+        if (!sessionMappings.isEmpty()) {
+            response.setSessionIds(sessionMappings.stream()
+                    .map(ProfileEventSessionEntity::getSessionId)
+                    .collect(Collectors.toList()));
+            response.setSession_event_code(sessionMappings.stream()
+                    .map(mapping -> mapping.getEventSession() != null ? mapping.getEventSession().getSessionEventCode() : null)
+                    .filter(java.util.Objects::nonNull)
+                    .collect(Collectors.toList()));
+        }
+        response.setProfileGroups(profileGroupRepository.findByProfileId(profile.getProfileId()).stream()
+                .map(g -> ProfileGroupResponse.builder().groupId(g.getGroupId()).channelId(g.getChannelId()).groupConfig(g.getGroupConfig()).build()).collect(Collectors.toList()));
+        response.setChannelTemplates(profileChannelRepository.findByProfileId(profile.getProfileId()).stream()
+                .map(pc -> ProfileChannelTemplateResponse.builder().channelId(pc.getChannelId())
+                        .channelName(pc.getChannel() == null ? null : pc.getChannel().getChannelName())
+                        .templateId(pc.getTemplateId())
+                        .templateName(pc.getTemplate() == null ? null : pc.getTemplate().getTemplateName()).build())
+                .collect(Collectors.toList()));
+        return response;
     }
 
     @Override
@@ -353,6 +451,14 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
 
     @Override
     @Transactional(readOnly = true)
+    public BusinessRuleCredentialResponse getBusinessRuleCredential(UUID ruleId) {
+        BusinessRuleEntity rule = businessRuleRepository.findById(ruleId)
+                .orElseThrow(() -> new IllegalArgumentException("Business rule not found with ID: " + ruleId));
+        return new BusinessRuleCredentialResponse(rule.getSourceUsername(), rule.getSourcePassword());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<BusinessRuleResponse> getRulesByProfileId(UUID profileId) {
         log.info("Fetching business rules mapped to profile ID: {}", profileId);
         List<ProfileBusinessRuleMappingEntity> mappings = profileBusinessRuleMappingRepository.findByProfileId(profileId);
@@ -366,17 +472,8 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
     @Transactional
     public BusinessRuleResponse createBusinessRule(BusinessRuleResponse request) {
         log.info("Creating business rule: {}", request.getBusinessRuleCode());
-        String sqlQuery = request.getSqlQuery();
-        if (sqlQuery == null || sqlQuery.trim().isEmpty()) {
-            if (request.getSourceTable() != null && !request.getSourceTable().trim().isEmpty()) {
-                String dbTable = request.getSourceDatabase() != null && !request.getSourceDatabase().trim().isEmpty()
-                        ? request.getSourceDatabase() + "." + request.getSourceTable()
-                        : request.getSourceTable();
-                sqlQuery = "SELECT * FROM " + dbTable;
-            } else {
-                sqlQuery = "SELECT 1";
-            }
-        }
+        String[] sqlQueries = request.getSqlQueries() == null ? new String[0] : request.getSqlQueries();
+        String[] summarySqlQueries = request.getSummarySqlQueries() == null ? new String[0] : request.getSummarySqlQueries();
         BusinessRuleEntity entity = BusinessRuleEntity.builder()
                 .businessRuleCode(request.getBusinessRuleCode())
                 .businessRuleName(request.getBusinessRuleName())
@@ -387,7 +484,10 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
                 .sourceSchema(request.getSourceSchema())
                 .sourceTable(request.getSourceTable())
                 .sourceConnectionRef(request.getSourceConnectionRef())
-                .sqlQuery(sqlQuery)
+                .sourceUsername(request.getSourceUsername())
+                .sourcePassword(passwordForStorage(request))
+                .sqlQueries(sqlQueries)
+                .summarySqlQueries(summarySqlQueries)
                 .description(request.getDescription())
                 .status(request.getStatus() != null ? request.getStatus() : "ACTIVE")
                 .build();
@@ -409,12 +509,25 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
         if (request.getSourceSchema() != null) entity.setSourceSchema(request.getSourceSchema());
         if (request.getSourceTable() != null) entity.setSourceTable(request.getSourceTable());
         if (request.getSourceConnectionRef() != null) entity.setSourceConnectionRef(request.getSourceConnectionRef());
-        if (request.getSqlQuery() != null) entity.setSqlQuery(request.getSqlQuery());
+        if (request.getSourceUsername() != null) entity.setSourceUsername(request.getSourceUsername());
+        if (request.getSourcePassword() != null && !request.getSourcePassword().isBlank()) {
+            entity.setSourcePassword(request.getSourcePassword());
+        }
+        if (request.getSqlQueries() != null) entity.setSqlQueries(request.getSqlQueries());
+        if (request.getSummarySqlQueries() != null) entity.setSummarySqlQueries(request.getSummarySqlQueries());
         if (request.getDescription() != null) entity.setDescription(request.getDescription());
         if (request.getStatus() != null) entity.setStatus(request.getStatus());
         BusinessRuleEntity saved = businessRuleRepository.save(entity);
         return businessRuleMapper.toResponse(saved);
     }
+
+    private String passwordForStorage(BusinessRuleResponse request) {
+        if (request.getSourcePassword() == null || request.getSourcePassword().isBlank()) {
+            throw new IllegalArgumentException("sourcePassword is required when creating a business rule");
+        }
+        return request.getSourcePassword();
+    }
+
 
     @Override
     @Transactional
@@ -454,7 +567,6 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
                 .areaCode(request.getAreaCode())
                 .language(request.getLanguage())
                 .roleId(request.getRoleId())
-                .deleted(false)
                 .build();
         AccountEntity saved = accountRepository.save(entity);
         return accountMapper.toResponse(saved);
@@ -504,13 +616,13 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
 
     @Override
     @Transactional
-    public EventResponse createEvent(EventResponse request) {
+    public EventResponse createEvent(CreateEventRequest request) {
         log.info("Creating event: {}", request.getEventCode());
         EventEntity entity = EventEntity.builder()
                 .eventCode(request.getEventCode())
                 .eventName(request.getEventName())
-                .eventTypeId(request.getEventTypeId())
-                .holidayId(request.getHolidayId())
+                .eventTypeId(resolveEventTypeId(request))
+                .holidayId(resolveHolidayId(request))
                 .eventLevel(request.getEventLevel())
                 .annual(request.getAnnual() != null ? request.getAnnual() : false)
                 .isLunar(request.getIsLunar() != null ? request.getIsLunar() : false)
@@ -518,6 +630,42 @@ public class ProfileWorkflowServiceImpl implements ProfileWorkflowService {
                 .build();
         EventEntity saved = eventRepository.save(entity);
         return eventMapper.toResponse(saved);
+    }
+
+    private UUID resolveEventTypeId(CreateEventRequest request) {
+        if (request.getEventType() != null && request.getEventTypeId() != null) {
+            throw new IllegalArgumentException("Provide either eventTypeId or eventType, not both");
+        }
+        if (request.getEventType() != null) {
+            return eventTypeRepository.findByEventTypeCode(request.getEventType().getEventTypeCode())
+                    .map(EventTypeEntity::getEventTypeId)
+                    .orElseGet(() -> eventTypeRepository.save(EventTypeEntity.builder()
+                            .eventTypeCode(request.getEventType().getEventTypeCode())
+                            .eventTypeName(request.getEventType().getEventTypeName())
+                            .build()).getEventTypeId());
+        }
+        if (request.getEventTypeId() != null && !eventTypeRepository.existsById(request.getEventTypeId())) {
+            throw new IllegalArgumentException("Event type not found with ID: " + request.getEventTypeId());
+        }
+        return request.getEventTypeId();
+    }
+
+    private UUID resolveHolidayId(CreateEventRequest request) {
+        if (request.getHoliday() != null && request.getHolidayId() != null) {
+            throw new IllegalArgumentException("Provide either holidayId or holiday, not both");
+        }
+        if (request.getHoliday() != null) {
+            return holidayOccasionRepository.findByHolidayCode(request.getHoliday().getHolidayCode())
+                    .map(HolidayOccasionEntity::getHolidayId)
+                    .orElseGet(() -> holidayOccasionRepository.save(HolidayOccasionEntity.builder()
+                            .holidayCode(request.getHoliday().getHolidayCode())
+                            .holidayName(request.getHoliday().getHolidayName())
+                            .build()).getHolidayId());
+        }
+        if (request.getHolidayId() != null && !holidayOccasionRepository.existsById(request.getHolidayId())) {
+            throw new IllegalArgumentException("Holiday not found with ID: " + request.getHolidayId());
+        }
+        return request.getHolidayId();
     }
 
     @Override

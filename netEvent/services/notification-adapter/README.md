@@ -8,7 +8,7 @@ Standalone Spring Boot 2.7.18 / Java 11 microservice simulating the **Business S
 
 - Operates completely isolated on database `lhsk_db` (Port `8088`).
 - Never mutates or connects to Notification Service databases (`ingest_db`, `routing_db`, `audit_db`).
-- Auto-runs Flyway migration (`V1__init_schema.sql`) on startup.
+- Uses the shared database schema managed outside individual services.
 - All database tables, column names, and constraint values are standardized to pure English.
 - Provides REST endpoints to trigger 6 controlled test scenarios simulating network quality alarms.
 
@@ -19,7 +19,7 @@ Standalone Spring Boot 2.7.18 / Java 11 microservice simulating the **Business S
 - **Java**: 11 (inherited from `netevent-parent`)
 - **Framework**: Spring Boot 2.7.18 (Web, Data JPA)
 - **Database**: PostgreSQL (`lhsk_db`)
-- **Migration**: Flyway
+- **Schema management**: shared deployment schema
 - **Testing**: Testcontainers PostgreSQL
 
 ---
@@ -31,7 +31,7 @@ Standalone Spring Boot 2.7.18 / Java 11 microservice simulating the **Business S
 3. `cell_session` (Cell mapping within a session)
 4. `cell_event` (Cell role assignment - FK decoupled in V2)
 5. `user_account` (Users)
-6. `profile` (Notification recipient profiles + `require_approval`, `approval_timeout_minutes`)
+6. `profile` (Notification recipient profiles)
 7. `business_rule` (Business rule master configuration - V2)
 8. `profile_business_rule_mapping` (Profile to Business Rule N-N mapping - V2)
 9. `profile_event_session` (Profile to Event Session N-N mapping - V2)

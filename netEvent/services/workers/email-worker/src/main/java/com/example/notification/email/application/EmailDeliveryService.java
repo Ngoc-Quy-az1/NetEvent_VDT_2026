@@ -33,7 +33,7 @@ public class EmailDeliveryService {
         log.info("EmailWorker executing task: taskId={}, recipient={}, attempt={}",
                 event.getTaskId(), event.getRecipientTarget(), event.getAttemptNo());
 
-        boolean success = emailProvider.sendEmail(event.getRecipientTarget(), event.getTitle(), event.getBody());
+        boolean success = emailProvider.sendEmail(event.getRecipientTarget(), event.getTitle(), event.getBody(), event.getAttachments());
         Instant finishedAt = Instant.now();
 
         deliveryLogRepository.logAttempt(

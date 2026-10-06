@@ -31,5 +31,7 @@ public class CreateProfileRequest {
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm[:ss][.SSS][X]", timezone = "UTC")
     private Instant endTime;
     private List<UUID> channelIds;
+    private List<ProfileChannelTemplateRequest> channelTemplates;
     private List<UUID> accountIds;
+    private List<ProfileGroupRequest> profileGroups;
 }

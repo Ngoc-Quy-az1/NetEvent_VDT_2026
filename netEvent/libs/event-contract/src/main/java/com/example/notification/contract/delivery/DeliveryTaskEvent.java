@@ -2,6 +2,7 @@ package com.example.notification.contract.delivery;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 
 public class DeliveryTaskEvent {
@@ -18,6 +19,7 @@ public class DeliveryTaskEvent {
     private Integer attemptNo;
     private Map<String, String> metadata;
     private Instant createdAt;
+    private List<AttachmentRef> attachments;
 
     public DeliveryTaskEvent() {}
 
@@ -85,6 +87,8 @@ public class DeliveryTaskEvent {
 
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+    public List<AttachmentRef> getAttachments() { return attachments; }
+    public void setAttachments(List<AttachmentRef> attachments) { this.attachments = attachments; }
 
     public UUID taskId() { return taskId; }
     public UUID notificationId() { return notificationId; }

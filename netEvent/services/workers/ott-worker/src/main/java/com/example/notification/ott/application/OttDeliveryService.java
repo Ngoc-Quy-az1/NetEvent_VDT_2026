@@ -33,7 +33,10 @@ public class OttDeliveryService {
         log.info("OttWorker executing task: taskId={}, recipient={}, attempt={}",
                 event.getTaskId(), event.getRecipientTarget(), event.getAttemptNo());
 
-        boolean success = ottProvider.sendOtt(event.getRecipientTarget(), event.getBody());
+        String message = event.getTitle() == null || event.getTitle().isBlank()
+                ? event.getBody()
+                : event.getTitle() + "\n\n" + (event.getBody() == null ? "" : event.getBody());
+        boolean success = ottProvider.sendOtt(event.getRecipientTarget(), message);
         Instant finishedAt = Instant.now();
 
         deliveryLogRepository.logAttempt(
